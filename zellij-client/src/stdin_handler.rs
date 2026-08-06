@@ -214,9 +214,15 @@ pub(crate) fn stdin_loop(
                         // Each event is forwarded with exactly the bytes
                         // that produced it, never bytes belonging to other
                         // events decoded from the same read.
-                        for (input_event, consumed) in events.into_iter() {
-                            let take = consumed.min(current_buffer.len());
-                            let raw_bytes: Vec<u8> = current_buffer.drain(..take).collect();
+                        //
+                        // `current_buffer` is drained fully per event (as
+                        // in 0.44.x): `parse_with_consumed` under
+                        // `maybe_more` may under-report consumed bytes for
+                        // a trailing incomplete sequence, and draining only
+                        // `consumed` would leave stale bytes accumulating
+                        // across reads, desyncing keys from events.
+                        for (input_event, _consumed) in events.into_iter() {
+                            let raw_bytes: Vec<u8> = current_buffer.drain(..).collect();
                             if send_input_instructions
                                 .send(InputInstruction::KeyEvent(input_event, raw_bytes))
                                 .is_err()
@@ -323,9 +329,8 @@ fn drain_partial_to_keyboard(
         },
         false,
     );
-    for (input_event, consumed) in events {
-        let take = consumed.min(current_buffer.len());
-        let raw_bytes: Vec<u8> = current_buffer.drain(..take).collect();
+    for (input_event, _consumed) in events {
+        let raw_bytes: Vec<u8> = current_buffer.drain(..).collect();
         send_input_instructions
             .send(InputInstruction::KeyEvent(input_event, raw_bytes))
             .unwrap();
